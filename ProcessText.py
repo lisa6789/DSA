@@ -4,6 +4,7 @@ import os
 import nltk
 from nltk import word_tokenize
 from nltk import sent_tokenize
+from nltk import FreqDist
 from langdetect import detect
 import pandas as pd
 import string
@@ -16,6 +17,7 @@ from nltk.corpus import stopwords
 stop_words = set(stopwords.words('english'))
 
 d = list()
+freq = FreqDist()
 
 
 # Use Tika to parse the file
@@ -80,6 +82,9 @@ for input_file in glob.glob(os.path.join(input_path, '*.*')):
         continue
 
     tokenised = tokenmakerwords(parsed)
+    fdist = nltk.FreqDist(tokenised)
+    freq += fdist
+
 
     # Ignore any documents with <50 words
     if len(tokenised) < 100:
@@ -106,6 +111,10 @@ doc = pd.concat(d)
 wordtokens(doc)
 
 print(doc.head())
+print(freq)
+for w, f in freq.most_common(50):
+    print(u'{};{}'.format(w, f))
 
+# TODO - clean up \n lines
 
 
