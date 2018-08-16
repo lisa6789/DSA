@@ -16,7 +16,9 @@ input_path = 'C:\\test'
 from nltk.corpus import stopwords
 stop_words = set(stopwords.words('english'))
 
-d = list()
+# set as df
+#concat
+d = pd.DataFrame(columns=['document', 'sentences', 'words', 'pos'])
 freq = FreqDist()
 
 
