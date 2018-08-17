@@ -16,9 +16,10 @@ input_path = 'C:\\test'
 from nltk.corpus import stopwords
 stop_words = set(stopwords.words('english'))
 
-# set as df
-#concat
-d = pd.DataFrame(columns=['document', 'sentences', 'words', 'pos'])
+# have df be document, sentences, words, pos
+# do keyword searching from list
+# contextualise search using pos
+d = pd.DataFrame()
 freq = FreqDist()
 
 
@@ -57,12 +58,12 @@ def filterlanguage(inputfile):
 
 # Word tokens, parts of speech tagging
 def wordtokens(dataframe):
-    dataframe['words'] = dataframe['sentences'].apply(word_tokenize)
-    dataframe['words'] = dataframe['words'].apply(lambda x: [item.lower() for item in x])
-    dataframe['words'] = dataframe['words'].apply(lambda x: [item.strip(string.punctuation) for item in x])
-    dataframe['words'] = dataframe['words'].apply(lambda x: [item for item in x if item.isalpha()])
-    dataframe['words'] = dataframe['words'].apply(lambda x: [item for item in x if item not in stop_words])
-    dataframe['pos'] = dataframe['words'].apply(nltk.pos_tag)
+    dataframe['words'] = dataframe['sentences'].apply(lambda x: [word_tokenize(item) for item in x])
+    #dataframe['words'] = dataframe['words'].apply(lambda x: [item.lower() for item in x])
+    #dataframe['words'] = dataframe['words'].apply(lambda x: [item.strip(string.punctuation) for item in x])
+    #dataframe['words'] = dataframe['words'].apply(lambda x: [item for item in x if item.isalpha()])
+    #dataframe['words'] = dataframe['words'].apply(lambda x: [item for item in x if item not in stop_words])
+    #dataframe['pos'] = dataframe['words'].apply(nltk.pos_tag)
     return dataframe
 
 
@@ -84,9 +85,8 @@ for input_file in glob.glob(os.path.join(input_path, '*.*')):
         continue
 
     tokenised = tokenmakerwords(parsed)
-    fdist = nltk.FreqDist(tokenised)
-    freq += fdist
-
+    #fdist = nltk.FreqDist(tokenised)
+    #freq += fdist
 
     # Ignore any documents with <50 words
     if len(tokenised) < 100:
@@ -96,27 +96,21 @@ for input_file in glob.glob(os.path.join(input_path, '*.*')):
     sentences = sent_tokenize(parsed)
 
     # Build up dataframe
-    d.append(pd.DataFrame({'document': filename, 'sentences': sentences}))
+    temp = pd.Series([filename, sentences])
+    d = d.append(temp, ignore_index=True)
 
-    # check for output folder and build if it doesn't exist
-    # if not os.path.exists(input_path + '\\output\\' + fname):
-    #     os.makedirs(input_path + '\\output\\' + fname)
-    # # write out the text extracted by tika
-    # f = open(input_path + '\\output\\' + '\\' + fname + '\\' + os.path.splitext(filename)[0] + '.txt', 'wb')
-    # f.write(parsed.encode('utf-8').strip())
-    # f.close()
-
-# Create full dataframe
-doc = pd.concat(d)
+d.reset_index(drop=True,inplace=True)
+d.columns = ['document', 'sentences']
 
 # Word tokenize the sentences, cleanup, parts of speech tagging
-wordtokens(doc)
+wordtokens(d)
 
-print(doc.head())
-print(freq)
-for w, f in freq.most_common(50):
-    print(u'{};{}'.format(w, f))
+print(d.head())
+#print(freq)
+#for w, f in freq.most_common(50):
+ #   print(u'{};{}'.format(w, f))
 
-# TODO - clean up \n lines
+# TODO - clean up \n lines - regex
+# TODO - rework word and pos fragments into new DF
 
 
