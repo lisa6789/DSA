@@ -4,33 +4,28 @@ import os
 import nltk
 from nltk import word_tokenize
 from nltk import sent_tokenize
-from nltk import FreqDist
 from langdetect import detect
 import pandas as pd
 import string
-
+import re
+from nltk.corpus import stopwords
 
 # document tokenization after text pre-preprocessing to differentiate types then token based on type
 
 input_path = 'C:\\test'
-from nltk.corpus import stopwords
 stop_words = set(stopwords.words('english'))
 
 # have df be document, sentences, words, pos
 # do keyword searching from list
 # contextualise search using pos
 d = pd.DataFrame()
-freq = FreqDist()
-
 
 # Use Tika to parse the file
 def parsewithtika(inputfile):
     parsed = parser.from_file(inputfile)
     # Extract the text content from the parsed file
     psd = parsed["content"]
-    # Convert double newlines into single newlines
-    psd.replace('\n\n', '\n')
-    return psd
+    return re.sub(r'\s+', ' ', psd)
 
 
 def tokenmakerwords(inputfile):
@@ -58,12 +53,11 @@ def filterlanguage(inputfile):
 
 # Word tokens, parts of speech tagging
 def wordtokens(dataframe):
-    dataframe['words'] = dataframe['sentences'].apply(lambda x: [word_tokenize(item) for item in x])
-    #dataframe['words'] = dataframe['words'].apply(lambda x: [item.lower() for item in x])
-    #dataframe['words'] = dataframe['words'].apply(lambda x: [item.strip(string.punctuation) for item in x])
-    #dataframe['words'] = dataframe['words'].apply(lambda x: [item for item in x if item.isalpha()])
-    #dataframe['words'] = dataframe['words'].apply(lambda x: [item for item in x if item not in stop_words])
-    #dataframe['pos'] = dataframe['words'].apply(nltk.pos_tag)
+    dataframe['words'] = (dataframe['sentences'].apply(lambda x: [word_tokenize(item.strip(string.punctuation).lower())
+                                                                  for item in x]))
+    dataframe['words'] = (dataframe['words'].apply(lambda x: [[item for item in lst if item.isalpha()
+                                                               and item not in stop_words] for lst in x]))
+    dataframe['pos'] = dataframe['words'].apply(lambda x: [nltk.pos_tag(item) for item in x])
     return dataframe
 
 
@@ -74,7 +68,6 @@ for input_file in glob.glob(os.path.join(input_path, '*.*')):
     filename = os.path.basename(input_file)
     fname = os.path.splitext(filename)[0]
     print(filename)
-    print(fname)
 
     # Parse the file to get to the text
     parsed = parsewithtika(input_file)
@@ -85,8 +78,6 @@ for input_file in glob.glob(os.path.join(input_path, '*.*')):
         continue
 
     tokenised = tokenmakerwords(parsed)
-    #fdist = nltk.FreqDist(tokenised)
-    #freq += fdist
 
     # Ignore any documents with <50 words
     if len(tokenised) < 100:
@@ -106,11 +97,6 @@ d.columns = ['document', 'sentences']
 wordtokens(d)
 
 print(d.head())
-#print(freq)
-#for w, f in freq.most_common(50):
- #   print(u'{};{}'.format(w, f))
 
-# TODO - clean up \n lines - regex
-# TODO - rework word and pos fragments into new DF
 
 
