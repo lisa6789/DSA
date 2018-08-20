@@ -53,12 +53,11 @@ def filterlanguage(inputfile):
 
 # Word tokens, parts of speech tagging
 def wordtokens(dataframe):
-    dataframe['words'] = (dataframe['sentences'].apply(lambda x: [word_tokenize(item.strip(string.punctuation).lower())
-                                                                  for item in x]))
-    dataframe['words'] = (dataframe['words'].apply(lambda x: [[item for item in lst if item.isalpha()
-                                                               and item not in stop_words] for lst in x]))
+    dataframe['words'] = (dataframe['sentences'].apply(lambda x: [word_tokenize(item) for item in x]))
     dataframe['pos'] = dataframe['words'].apply(lambda x: [nltk.pos_tag(item) for item in x])
-    dataframe['allwords'] = d['words'].apply(lambda x: [item for sublist in x for item in sublist])
+    dataframe['allwords'] = d['words'].apply(lambda x: [item.strip(string.punctuation).lower() for sublist in x for item in sublist])
+    dataframe['allwords'] = (dataframe['allwords'].apply(lambda x: [item for item in x if item.isalpha()
+                                                               and item not in stop_words]))
     dataframe['mfreq'] = d['allwords'].apply(nltk.FreqDist)
     return dataframe
 
@@ -102,13 +101,13 @@ print(d.head())
 
 keywords = ['IS', 'terrorism', 'bomb', 'is', 'the']
 
+# TODO - make this a function
 from collections import defaultdict
 word_matches = defaultdict(list)
 for word in keywords:
     for idx, row in d.iterrows():
-        for wordlist in row['words']:
-            if word in wordlist and not row['document'] in word_matches[word]:
-                word_matches[word].append(row['document'])
+        if word in row['allwords'] and not row['document'] in word_matches[word]:
+            word_matches[word].append(row['document'])
 
 for key, val in word_matches.items():
     print(key, val)
