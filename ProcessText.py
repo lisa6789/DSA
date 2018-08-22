@@ -99,18 +99,52 @@ wordtokens(d)
 
 print(d.head())
 
+d['score'] = 0
 keywords = ['IS', 'terrorism', 'bomb', 'is', 'the']
 
 # TODO - make this a function
+# TODO - use POS/stemming to make better counts of words, deal with cases
 from collections import defaultdict
 word_matches = defaultdict(list)
 for word in keywords:
     for idx, row in d.iterrows():
-        if word in row['allwords'] and not row['document'] in word_matches[word]:
-            word_matches[word].append(row['document'])
+        if word in row['allwords']:
+            d.loc[idx, 'score'] += row['mfreq'][word]
+            if not row['document'] in word_matches[word]:
+                word_matches[word].append(row['document'])
 
 for key, val in word_matches.items():
     print(key, val)
 
+# Search for IS as a noun
+for idx, row in d.iterrows():
+    for index, r in enumerate(row['pos']):
+        for (w1, t1) in r:
+            if w1 == 'IS' and t1 == 'NNP':
+                print(row['document'] + ' - ' + ' '.join(row['words'][index]))
+                print('\n')
 
+# sort by scoring - last item in the list
+d = d.sort_values('score', ascending=False)
 
+# print sorted documents - will be the final return item
+print(d[['document', 'score']])
+
+#compare with non cleansed
+d['score2'] = 0
+d['w2'] = d['words'].apply(lambda x: [item for sublist in x for item in sublist])
+d['mfreq2'] = d['w2'].apply(nltk.FreqDist)
+d.drop('w2', axis=1, inplace=True)
+word_matches = defaultdict(list)
+for word in keywords:
+    for idx, row in d.iterrows():
+        if word in row['w2']:
+            d.loc[idx, 'score2'] += row['mfreq2'][word]
+            if not row['document'] in word_matches[word]:
+                word_matches[word].append(row['document'])
+
+for key, val in word_matches.items():
+    print(key, val)
+
+d = d.sort_values('score2', ascending=False)
+print(d[['document', 'score2']])
