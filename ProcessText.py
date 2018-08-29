@@ -9,16 +9,16 @@ import pandas as pd
 import string
 import re
 from nltk.corpus import stopwords
+from collections import defaultdict
 
-# document tokenization after text pre-preprocessing to differentiate types then token based on type
-
+# Define location of files and keywords - TODO parameterise these
 input_path = 'C:\\test'
 stop_words = set(stopwords.words('english'))
+keywords = ['IS', 'terrorism', 'bomb', 'is', 'the', 'consortium']
 
-# have df be document, sentences, words, pos
-# do keyword searching from list
-# contextualise search using pos
+# Set up Dataframe
 d = pd.DataFrame()
+
 
 # Use Tika to parse the file
 def parsewithtika(inputfile):
@@ -28,6 +28,8 @@ def parsewithtika(inputfile):
     return re.sub(r'\s+', ' ', psd)
 
 
+# Return NLTK text from the document - used to filter out short documents but may
+# also be used for further processing in future dev
 def tokenmakerwords(inputfile):
     # Create tokens
     tokens = word_tokenize(inputfile)
@@ -62,8 +64,66 @@ def wordtokens(dataframe):
     return dataframe
 
 
+# Score documents based on cleansed dataset - so should discount stopwords and be sensible
+def scoring(dataframe):
+    word_matches = defaultdict(list)
+    for word in keywords:
+        for idx, row in dataframe.iterrows():
+            if word in row['allwords']:
+                dataframe.loc[idx, 'score'] += row['mfreq'][word]
+                if not row['document'] in word_matches[word]:
+                    word_matches[word].append(row['document'])
+    print('\n')
+    print('The following keyword hits occurred:')
+
+    for key, val in word_matches.items():
+        print("Keyword: " + key + ". Found in these documents: ")
+        print(val)
+
+    return dataframe
+
+
+# Find keywords using POS
+def contextkeywords(dataframe):
+    print('\n')
+    print('Here are the keywords in context: ')
+    # Search for IS as a noun
+    for idx, row in dataframe.iterrows():
+        for index, r in enumerate(row['pos']):
+            for (w1, t1) in r:
+                if w1 == 'IS' and t1 == 'NNP':
+                    print(row['document'] + ' - ' + ' '.join(row['words'][index]))
+                    print('\n')
+
+    return dataframe
+
+
+# Sort using a dirty model
+def dirtyscoring(dataframe):
+    dataframe['score2'] = 0
+    dataframe['w2'] = dataframe['words'].apply(lambda x: [item for sublist in x for item in sublist])
+    dataframe['mfreq2'] = dataframe['w2'].apply(nltk.FreqDist)
+
+    word_matches = defaultdict(list)
+    for word in keywords:
+        for idx, row in dataframe.iterrows():
+            if word in row['w2']:
+                dataframe.loc[idx, 'score2'] += row['mfreq2'][word]
+                if not row['document'] in word_matches[word]:
+                    word_matches[word].append(row['document'])
+    print('\n')
+    print('The following keyword hits occurred in the uncleansed data:')
+
+    for key, val in word_matches.items():
+        print("Keyword: " + key + ". Found in these documents: ")
+        print(val)
+
+    return dataframe
+
+
 # Main loop function
 # Iterate over all files in the folder and process each one in turn
+print('Starting processing - the following files have been processed:')
 for input_file in glob.glob(os.path.join(input_path, '*.*')):
     # Grab the file name
     filename = os.path.basename(input_file)
@@ -94,57 +154,29 @@ for input_file in glob.glob(os.path.join(input_path, '*.*')):
 d.reset_index(drop=True, inplace=True)
 d.columns = ['document', 'sentences']
 
+
 # Word tokenize the sentences, cleanup, parts of speech tagging
 wordtokens(d)
-
-print(d.head())
-
 d['score'] = 0
-keywords = ['IS', 'terrorism', 'bomb', 'is', 'the']
 
-# TODO - make this a function
+# Add scoring
 # TODO - use POS/stemming to make better counts of words, deal with cases
-from collections import defaultdict
-word_matches = defaultdict(list)
-for word in keywords:
-    for idx, row in d.iterrows():
-        if word in row['allwords']:
-            d.loc[idx, 'score'] += row['mfreq'][word]
-            if not row['document'] in word_matches[word]:
-                word_matches[word].append(row['document'])
+scoring(d)
 
-for key, val in word_matches.items():
-    print(key, val)
+# Find words in context with POS
+contextkeywords(d)
 
-# Search for IS as a noun
-for idx, row in d.iterrows():
-    for index, r in enumerate(row['pos']):
-        for (w1, t1) in r:
-            if w1 == 'IS' and t1 == 'NNP':
-                print(row['document'] + ' - ' + ' '.join(row['words'][index]))
-                print('\n')
-
-# sort by scoring - last item in the list
+# Sort by scoring
 d = d.sort_values('score', ascending=False)
 
-# print sorted documents - will be the final return item
+# Print sorted documents
+print('\n')
+print('Here are the scores based on cleansed data:')
 print(d[['document', 'score']])
 
-#compare with non cleansed
-d['score2'] = 0
-d['w2'] = d['words'].apply(lambda x: [item for sublist in x for item in sublist])
-d['mfreq2'] = d['w2'].apply(nltk.FreqDist)
-d.drop('w2', axis=1, inplace=True)
-word_matches = defaultdict(list)
-for word in keywords:
-    for idx, row in d.iterrows():
-        if word in row['w2']:
-            d.loc[idx, 'score2'] += row['mfreq2'][word]
-            if not row['document'] in word_matches[word]:
-                word_matches[word].append(row['document'])
-
-for key, val in word_matches.items():
-    print(key, val)
+dirtyscoring(d)
 
 d = d.sort_values('score2', ascending=False)
+print('\n')
+print('Here are the scores based on uncleansed data:')
 print(d[['document', 'score2']])
