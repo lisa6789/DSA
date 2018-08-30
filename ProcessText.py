@@ -10,6 +10,8 @@ import string
 import re
 from nltk.corpus import stopwords
 from collections import defaultdict
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.cluster import KMeans
 
 # Define location of files and keywords - TODO parameterise these
 input_path = 'C:\\test'
@@ -18,6 +20,9 @@ keywords = ['IS', 'terrorism', 'bomb', 'is', 'the', 'consortium']
 
 # Set up Dataframe
 d = pd.DataFrame()
+
+# Create a list to use for clustering
+doclist = []
 
 
 # Use Tika to parse the file
@@ -121,6 +126,37 @@ def dirtyscoring(dataframe):
     return dataframe
 
 
+# Cluster documents and demonstrate prediction
+# TODO - calculate ideal k value
+def clustering(documents):
+    vectorizer = TfidfVectorizer(stop_words='english')
+    X = vectorizer.fit_transform(doclist)
+
+    true_k = 3
+    model = KMeans(n_clusters=true_k, init='k-means++', max_iter=100, n_init=1)
+    model.fit(X)
+
+    print("Top terms per cluster:")
+    order_centroids = model.cluster_centers_.argsort()[:, ::-1]
+    terms = vectorizer.get_feature_names()
+    for i in range(true_k):
+        print("Cluster %d:" % i),
+        for ind in order_centroids[i, :10]:
+            print(' %s' % terms[ind]),
+        print
+
+    print("\n")
+    print("Prediction")
+
+    Y = vectorizer.transform(["this is a document about islamic state and terrorists and bombs IS jihad terrorism isil"])
+    prediction = model.predict(Y)
+    print(prediction)
+
+    Y = vectorizer.transform(["completely innocent text just about kittens and puppies"])
+    prediction = model.predict(Y)
+    print(prediction)
+
+
 # Main loop function
 # Iterate over all files in the folder and process each one in turn
 print('Starting processing - the following files have been processed:')
@@ -132,6 +168,7 @@ for input_file in glob.glob(os.path.join(input_path, '*.*')):
 
     # Parse the file to get to the text
     parsed = parsewithtika(input_file)
+    doclist.append(parsed)
 
     # Language detection algorithm is non - deterministic, which means that if you try to run it on a text which is
     # either too short or too ambiguous, you might get different results every time you run it
@@ -180,3 +217,9 @@ d = d.sort_values('score2', ascending=False)
 print('\n')
 print('Here are the scores based on uncleansed data:')
 print(d[['document', 'score2']])
+
+clustering(doclist)
+
+
+
+
