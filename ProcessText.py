@@ -10,13 +10,16 @@ import string
 import re
 from nltk.corpus import stopwords
 from collections import defaultdict
-from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
+from nltk.stem.snowball import SnowballStemmer
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
+from sklearn.decomposition import NMF, LatentDirichletAllocation
 
 # Define location of files and keywords - TODO parameterise these
 input_path = 'C:\\test'
 stop_words = set(stopwords.words('english'))
 keywords = ['IS', 'terrorism', 'bomb', 'is', 'the', 'consortium']
+stemmer = SnowballStemmer('english')
 
 # Set up Dataframe
 d = pd.DataFrame()
@@ -126,13 +129,24 @@ def dirtyscoring(dataframe):
     return dataframe
 
 
+def tokenize_and_stem(text):
+    tokens = [word for sent in nltk.sent_tokenize(text) for word in nltk.word_tokenize(sent)]
+    filtered_tokens = []
+    for token in tokens:
+        if re.search('[a-zA-Z]', token):
+            filtered_tokens.append(token)
+    stems = [stemmer.stem(t) for t in filtered_tokens]
+    return stems
+
+
 # Cluster documents and demonstrate prediction
 # TODO - calculate ideal k value
 def clustering(documents):
-    vectorizer = TfidfVectorizer(stop_words='english')
+    vectorizer = TfidfVectorizer(stop_words='english', max_df=0.8, min_df=0.2, use_idf=True,
+                                 tokenizer=tokenize_and_stem, ngram_range=(1, 3))
     X = vectorizer.fit_transform(doclist)
 
-    true_k = 3
+    true_k = 5
     model = KMeans(n_clusters=true_k, init='k-means++', max_iter=100, n_init=1)
     model.fit(X)
 
@@ -150,11 +164,20 @@ def clustering(documents):
 
     Y = vectorizer.transform(["this is a document about islamic state and terrorists and bombs IS jihad terrorism isil"])
     prediction = model.predict(Y)
+    print("A document with 'bad' terms would be in:")
     print(prediction)
 
     Y = vectorizer.transform(["completely innocent text just about kittens and puppies"])
     prediction = model.predict(Y)
+    print("A document with 'good' terms would be in:")
     print(prediction)
+
+
+def display_topics(model, feature_names, no_top_words):
+    for topic_idx, topic in enumerate(model.components_):
+        print("Topic %d:" % (topic_idx))
+        print(" ".join([feature_names[i]
+                        for i in topic.argsort()[:-no_top_words - 1:-1]]))
 
 
 # Main loop function
@@ -218,8 +241,34 @@ print('\n')
 print('Here are the scores based on uncleansed data:')
 print(d[['document', 'score2']])
 
+# TODO - check doclist filters out enough
 clustering(doclist)
 
+no_features = 1000
 
+# NMF is able to use tf-idf
+tfidf_vectorizer = TfidfVectorizer(max_df=0.95, min_df=2, max_features=no_features, stop_words='english')
+tfidf = tfidf_vectorizer.fit_transform(doclist)
+tfidf_feature_names = tfidf_vectorizer.get_feature_names()
+
+# LDA can only use raw term counts for LDA because it is a probabilistic graphical model
+tf_vectorizer = CountVectorizer(max_df=0.95, min_df=2, max_features=no_features, stop_words='english')
+tf = tf_vectorizer.fit_transform(doclist)
+tf_feature_names = tf_vectorizer.get_feature_names()
+
+no_topics = 5
+
+# Run NMF
+nmf = NMF(n_components=no_topics, random_state=1, alpha=.1, l1_ratio=.5, init='nndsvd').fit(tfidf)
+
+# Run LDA
+lda = LatentDirichletAllocation(n_topics=no_topics, max_iter=5,
+                                learning_method='online', learning_offset=50.,random_state=0).fit(tf)
+
+no_top_words = 10
+print("NMF Topics: ")
+display_topics(nmf, tfidf_feature_names, no_top_words)
+print("LDA Topics: ")
+display_topics(lda, tf_feature_names, no_top_words)
 
 

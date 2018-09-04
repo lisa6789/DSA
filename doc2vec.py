@@ -43,6 +43,7 @@ for epoch in range(10):
     model.alpha -= 0.002 # decrease the learning rate
     model.min_alpha = model.alpha # fix the learning rate, no deca
     model.train(it, total_examples=model.corpus_count, epochs=model.iter)
+    print('iter' + epoch)
 
 model.save('doc2vec.model')
 
