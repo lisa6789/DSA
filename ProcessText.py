@@ -162,7 +162,8 @@ def clustering(documents):
     print("\n")
     print("Prediction")
 
-    Y = vectorizer.transform(["this is a document about islamic state and terrorists and bombs IS jihad terrorism isil"])
+    Y = vectorizer.transform(["this is a document about islamic state "
+                              "and terrorists and bombs IS jihad terrorism isil"])
     prediction = model.predict(Y)
     print("A document with 'bad' terms would be in:")
     print(prediction)
@@ -180,6 +181,35 @@ def display_topics(model, feature_names, no_top_words):
                         for i in topic.argsort()[:-no_top_words - 1:-1]]))
 
 
+def nmflda(documentlist):
+    no_features = 1000
+
+    # NMF is able to use tf-idf
+    tfidf_vectorizer = TfidfVectorizer(max_df=0.95, min_df=2, max_features=no_features, stop_words='english')
+    tfidf = tfidf_vectorizer.fit_transform(documentlist)
+    tfidf_feature_names = tfidf_vectorizer.get_feature_names()
+
+    # LDA can only use raw term counts for LDA because it is a probabilistic graphical model
+    tf_vectorizer = CountVectorizer(max_df=0.95, min_df=2, max_features=no_features, stop_words='english')
+    tf = tf_vectorizer.fit_transform(documentlist)
+    tf_feature_names = tf_vectorizer.get_feature_names()
+
+    no_topics = 5
+
+    # Run NMF
+    nmf = NMF(n_components=no_topics, random_state=1, alpha=.1, l1_ratio=.5, init='nndsvd').fit(tfidf)
+
+    # Run LDA
+    lda = LatentDirichletAllocation(n_topics=no_topics, max_iter=5,
+                                    learning_method='online', learning_offset=50.,random_state=0).fit(tf)
+
+    no_top_words = 10
+    print("NMF Topics: ")
+    display_topics(nmf, tfidf_feature_names, no_top_words)
+    print("LDA Topics: ")
+    display_topics(lda, tf_feature_names, no_top_words)
+
+
 # Main loop function
 # Iterate over all files in the folder and process each one in turn
 print('Starting processing - the following files have been processed:')
@@ -191,7 +221,6 @@ for input_file in glob.glob(os.path.join(input_path, '*.*')):
 
     # Parse the file to get to the text
     parsed = parsewithtika(input_file)
-    doclist.append(parsed)
 
     # Language detection algorithm is non - deterministic, which means that if you try to run it on a text which is
     # either too short or too ambiguous, you might get different results every time you run it
@@ -204,6 +233,8 @@ for input_file in glob.glob(os.path.join(input_path, '*.*')):
     if len(tokenised) < 100:
         continue
 
+    # Create doclist for use in topic modelling
+    doclist.append(parsed)
     # Sentence fragments
     sentences = sent_tokenize(parsed)
 
@@ -242,33 +273,9 @@ print('Here are the scores based on uncleansed data:')
 print(d[['document', 'score2']])
 
 # TODO - check doclist filters out enough
+# Print results of K Means Cluster and prediction modelling
 clustering(doclist)
 
-no_features = 1000
-
-# NMF is able to use tf-idf
-tfidf_vectorizer = TfidfVectorizer(max_df=0.95, min_df=2, max_features=no_features, stop_words='english')
-tfidf = tfidf_vectorizer.fit_transform(doclist)
-tfidf_feature_names = tfidf_vectorizer.get_feature_names()
-
-# LDA can only use raw term counts for LDA because it is a probabilistic graphical model
-tf_vectorizer = CountVectorizer(max_df=0.95, min_df=2, max_features=no_features, stop_words='english')
-tf = tf_vectorizer.fit_transform(doclist)
-tf_feature_names = tf_vectorizer.get_feature_names()
-
-no_topics = 5
-
-# Run NMF
-nmf = NMF(n_components=no_topics, random_state=1, alpha=.1, l1_ratio=.5, init='nndsvd').fit(tfidf)
-
-# Run LDA
-lda = LatentDirichletAllocation(n_topics=no_topics, max_iter=5,
-                                learning_method='online', learning_offset=50.,random_state=0).fit(tf)
-
-no_top_words = 10
-print("NMF Topics: ")
-display_topics(nmf, tfidf_feature_names, no_top_words)
-print("LDA Topics: ")
-display_topics(lda, tf_feature_names, no_top_words)
-
+# Print results of NMF vs LDA topic modelling
+nmflda(doclist)
 
