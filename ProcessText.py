@@ -11,38 +11,24 @@ import re
 from nltk.corpus import stopwords
 from collections import defaultdict
 from sklearn.cluster import KMeans
-from nltk.stem.snowball import SnowballStemmer
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.decomposition import NMF, LatentDirichletAllocation
-from nltk.corpus import brown
-from nltk.tag import RegexpTagger
-from nltk.tag import UnigramTagger
 from nltk.stem import PorterStemmer
 
-regexp_tagger = RegexpTagger(
-            [(r'^-?[0-9]+(.[0-9]+)?$', 'CD'),   # cardinal numbers
-             (r'(The|the|A|a|An|an)$', 'AT'),   # articles
-             (r'.*able$', 'JJ'),                # adjectives
-             (r'.*ness$', 'NN'),                # nouns formed from adjectives
-             (r'.*ly$', 'RB'),                  # adverbs
-             (r'.*s$', 'NNS'),                  # plural nouns
-             (r'.*ing$', 'VBG'),                # gerunds
-             (r'.*ed$', 'VBD'),                 # past tense verbs
-             (r'.*', 'NN')                      # nouns (default)
-        ])
-brown_train = brown.tagged_sents(categories='news')
-unigram_tagger = UnigramTagger(brown_train, backoff=regexp_tagger)
-
-
-# Define location of files and keywords - TODO parameterise these
-stemmer = SnowballStemmer('english')
 pstemmer = PorterStemmer()
 
 input_path = 'C:\\test'
 stop_words = set(stopwords.words('english'))
 keywords = ['IS', 'terrorism', 'bomb', 'is', 'the', 'consortium']
-poskeywords = unigram_tagger.tag(keywords)
-stemkeywords = unigram_tagger.tag([pstemmer.stem(t) for t in keywords])
+filterkeywords = [w for w in keywords if w not in stop_words]
+# TODO - if first keyword is a verb move it and re-tag
+poskeywords = nltk.pos_tag(filterkeywords)
+
+if poskeywords[0][1] == 'VBZ':
+    filterkeywords.insert(1, filterkeywords.pop(0))
+    poskeywords = nltk.pos_tag(filterkeywords)
+
+stemkeywords = nltk.pos_tag([pstemmer.stem(t) for t in filterkeywords])
 
 
 # Set up Dataframe
@@ -50,6 +36,7 @@ d = pd.DataFrame()
 
 # Create a list to use for clustering
 doclist = []
+word_matches = defaultdict(list)
 
 
 # Use Tika to parse the file
@@ -106,73 +93,50 @@ def wordtokens(dataframe):
 
 
 # Score documents based on cleansed dataset - so should discount stopwords and be sensible
-def scoring(dataframe):
-    word_matches = defaultdict(list)
+def scoring(dataframe, list):
     for word in keywords:
         for idx, row in dataframe.iterrows():
             if word in row['allwords']:
                 dataframe.loc[idx, 'score'] += (row['mfreq'][word] * 0.75)
-                if not row['document'] in word_matches[word]:
-                    word_matches[word].append(row['document'])
-    print('\n')
-    print('The following keyword hits occurred:')
-
-    for key, val in word_matches.items():
-        print("Keyword: " + key + ". Found in these documents: ")
-        print(val)
+                if not row['document'] in list[word+ ' - word only match']:
+                    list[word + ' - word only match'].append(row['document'])
 
     return dataframe
 
 
 # Score documents based on pos - should be most exact match
-def scoringpos(dataframe):
-    word_matches = defaultdict(list)
+def scoringpos(dataframe, list):
     for (w1, t1) in poskeywords:
         for idx, row in dataframe.iterrows():
             if (w1, t1) in row['poslist']:
                 dataframe.loc[idx, 'score'] += row['mfreqpos'][(w1, t1)]
-                if not row['document'] in word_matches[w1]:
-                    word_matches[w1].append(row['document'])
-    print('\n')
-    print('The following keyword hits occurred:')
-
-    for key, val in word_matches.items():
-        print("Keyword: " + key + ". Found in these documents: ")
-        print(val)
+                if not row['document'] in list[w1+ ' - exact match']:
+                    list[w1+ ' - exact match'].append(row['document'])
 
     return dataframe
 
 
 # Score documents based on cleansed dataset - so should discount stopwords and be sensible
-def scoringstem(dataframe):
-    word_matches = defaultdict(list)
-    for word in keywords:
+def scoringstem(dataframe, list):
+    for word in stemkeywords:
         for idx, row in dataframe.iterrows():
             if word in row['stemwords']:
                 dataframe.loc[idx, 'score'] += (row['mfreqstem'][word] * 0.5)
-                if not row['document'] in word_matches[word]:
-                    word_matches[word].append(row['document'])
-    print('\n')
-    print('The following keyword hits occurred:')
-
-    for key, val in word_matches.items():
-        print("Keyword: " + key + ". Found in these documents: ")
-        print(val)
+                if not row['document'] in list[word+' - partial match']:
+                    list[word+' - partial match'].append(row['document'])
 
     return dataframe
+
 
 # Find keywords using POS
 def contextkeywords(dataframe):
     print('\n')
-    print('Here are the keywords in context: ')
-    # Search for IS as a noun
-    for idx, row in dataframe.iterrows():
-        for index, r in enumerate(row['pos']):
-            for (w1, t1) in r:
-                if w1 == 'IS' and t1 == 'NNP':
+    print('Here are the exact keyword matches in context: ')
+    for (w1, t1) in poskeywords:
+        for idx, row in dataframe.iterrows():
+            for index, r in enumerate(row['pos']):
+                if (w1, t1) in r:
                     print(row['document'] + ' - ' + ' '.join(row['words'][index]))
-                    print('\n')
-
     return dataframe
 
 
@@ -199,13 +163,19 @@ def dirtyscoring(dataframe):
     return dataframe
 
 
+def printkeywordmatches(list):
+    for key, val in list.items():
+        print("Keyword: " + key + ". Found in these documents: ")
+        print(val)
+
+
 def tokenize_and_stem(text):
     tokens = [word for sent in nltk.sent_tokenize(text) for word in nltk.word_tokenize(sent)]
     filtered_tokens = []
     for token in tokens:
         if re.search('[a-zA-Z]', token):
             filtered_tokens.append(token)
-    stems = [stemmer.stem(t) for t in filtered_tokens]
+    stems = [pstemmer.stem(t) for t in filtered_tokens]
     return stems
 
 
@@ -312,6 +282,7 @@ for input_file in glob.glob(os.path.join(input_path, '*.*')):
     temp = pd.Series([filename, sentences])
     d = d.append(temp, ignore_index=True)
 
+print('\n')
 d.reset_index(drop=True, inplace=True)
 d.columns = ['document', 'sentences']
 
@@ -321,14 +292,14 @@ wordtokens(d)
 d['score'] = 0
 
 # Now we score in a calculated manner:
-# TODO - separate out the word matches printing
 # Score 1 for matching word (case sensitive and POS)
-scoringpos(d)
+scoringpos(d, word_matches)
 # Score 0.75 for matching word (case insensitive,  stop words removed)
-scoring(d)
-# Score 0.5 for matching stem of word (case insensitive, stop words removed
-scoringstem(d)
-
+scoring(d, word_matches)
+# Score 0.5 for matching stem of word (case insensitive, stop words removed)
+scoringstem(d, word_matches)
+# Print out the results of keyword matching
+printkeywordmatches(word_matches)
 # Find words in context with POS
 contextkeywords(d)
 
