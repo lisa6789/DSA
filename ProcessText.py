@@ -14,16 +14,18 @@ from sklearn.cluster import KMeans
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.decomposition import NMF, LatentDirichletAllocation
 from nltk.stem import PorterStemmer
+import spacy
 
+nlp = spacy.load('en_core_web_sm', parser=False, entity=False)
 pstemmer = PorterStemmer()
 
-input_path = 'C:\\test'
+input_path = 'C:\\t3'
 stop_words = set(stopwords.words('english'))
 keywords = ['IS', 'terrorism', 'bomb', 'is', 'the', 'consortium']
 filterkeywords = [w for w in keywords if w not in stop_words]
-# TODO - if first keyword is a verb move it and re-tag
 poskeywords = nltk.pos_tag(filterkeywords)
 
+# If the first keyword is a verb, move it and reparse the list
 if poskeywords[0][1] == 'VBZ':
     filterkeywords.insert(1, filterkeywords.pop(0))
     poskeywords = nltk.pos_tag(filterkeywords)
@@ -72,10 +74,29 @@ def filterlanguage(inputfile):
     return False
 
 
+def pos(x):
+    return [(token.text, token.tag_) for token in x ]
+
+
+# find limit, go back to old version, or pipelines, or indexing, try apply
+# flatten list here so don't need to do both
+def spacy_pos(x):
+   pos_sent = []
+   for sentence in x:
+       processed_spacy = nlp(sentence)
+       pos_sent.append(pos(processed_spacy))
+   return pos_sent
+
+
 # Word tokens, parts of speech tagging
 def wordtokens(dataframe):
+    print('words')
     dataframe['words'] = (dataframe['sentences'].apply(lambda x: [word_tokenize(item) for item in x]))
-    dataframe['pos'] = dataframe['words'].apply(lambda x: [nltk.pos_tag(item) for item in x])
+    print('pos')
+    dataframe['pos'] = dataframe['sentences'].map(spacy_pos)
+    print('list')
+    dataframe['posnltk'] = dataframe['words'].apply(lambda x: [nltk.pos_tag(item) for item in x])
+    print('nltk')
     dataframe['allwords'] = dataframe['words'].apply(lambda x: [item.strip(string.punctuation).lower()
                                                                 for sublist in x for item in sublist])
     dataframe['allwords'] = (dataframe['allwords'].apply(lambda x: [item for item in x if item.isalpha()
@@ -97,10 +118,10 @@ def scoring(dataframe, list):
     for word in keywords:
         for idx, row in dataframe.iterrows():
             if word in row['allwords']:
-                dataframe.loc[idx, 'score'] += (row['mfreq'][word] * 0.75)
-                if not row['document'] in list[word+ ' - word only match']:
-                    list[word + ' - word only match'].append(row['document'])
-
+                if not row['document'] in list[word]:
+                    list[word].append(row['document'])
+                    dataframe.loc[idx, 'score'] += (row['mfreq'][word] * 0.75)
+                    print(row['mfreq'][word])
     return dataframe
 
 
@@ -109,10 +130,9 @@ def scoringpos(dataframe, list):
     for (w1, t1) in poskeywords:
         for idx, row in dataframe.iterrows():
             if (w1, t1) in row['poslist']:
-                dataframe.loc[idx, 'score'] += row['mfreqpos'][(w1, t1)]
-                if not row['document'] in list[w1+ ' - exact match']:
-                    list[w1+ ' - exact match'].append(row['document'])
-
+                if not row['document'] in list[w1]:
+                    list[w1].append(row['document'])
+                    dataframe.loc[idx, 'score'] += row['mfreqpos'][(w1, t1)]
     return dataframe
 
 
@@ -121,10 +141,9 @@ def scoringstem(dataframe, list):
     for word in stemkeywords:
         for idx, row in dataframe.iterrows():
             if word in row['stemwords']:
-                dataframe.loc[idx, 'score'] += (row['mfreqstem'][word] * 0.5)
-                if not row['document'] in list[word+' - partial match']:
-                    list[word+' - partial match'].append(row['document'])
-
+                if not row['document'] in list[word]:
+                    list[word].append(row['document'])
+                    dataframe.loc[idx, 'score'] += (row['mfreqstem'][word] * 0.5)
     return dataframe
 
 
