@@ -15,11 +15,14 @@ from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 from sklearn.decomposition import NMF, LatentDirichletAllocation
 from nltk.stem import PorterStemmer
 import spacy
+import en_core_web_sm  # or any other model you downloaded via spacy download or pip
 
-nlp = spacy.load('en_core_web_sm', parser=False, entity=False)
+nlp = en_core_web_sm.load()
+
+
 pstemmer = PorterStemmer()
 
-input_path = 'C:\\t3'
+input_path = 'C:\\t2'
 stop_words = set(stopwords.words('english'))
 keywords = ['IS', 'terrorism', 'bomb', 'is', 'the', 'consortium']
 filterkeywords = [w for w in keywords if w not in stop_words]
@@ -39,6 +42,7 @@ d = pd.DataFrame()
 # Create a list to use for clustering
 doclist = []
 word_matches = defaultdict(list)
+globalents = []
 
 
 # Use Tika to parse the file
@@ -49,24 +53,6 @@ def parsewithtika(inputfile):
     return re.sub(r'\s+', ' ', psd)
 
 
-# Return NLTK text from the document - used to filter out short documents but may
-# also be used for further processing in future dev
-def tokenmakerwords(inputfile):
-    # Create tokens
-    tokens = word_tokenize(inputfile)
-    # convert to lower case
-    tokens = [w.lower() for w in tokens]
-    # remove punctuation from each word
-    import string
-    stripped = [w.strip(string.punctuation) for w in tokens]
-    # remove remaining tokens that are not alphabetic
-    words = [word for word in stripped if word.isalpha()]
-    # filter out stop words
-    words = [w for w in words if w not in stop_words]
-    text = nltk.Text(words)
-    return text
-
-
 # Language filter
 def filterlanguage(inputfile):
     if detect(inputfile) != 'en':
@@ -74,29 +60,25 @@ def filterlanguage(inputfile):
     return False
 
 
+# Get parts of speech from SpaCy
 def pos(x):
-    return [(token.text, token.tag_) for token in x ]
+    return [(token.text, token.tag_) for token in x]
 
 
-# find limit, go back to old version, or pipelines, or indexing, try apply
-# flatten list here so don't need to do both
 def spacy_pos(x):
-   pos_sent = []
-   for sentence in x:
-       processed_spacy = nlp(sentence)
-       pos_sent.append(pos(processed_spacy))
-   return pos_sent
+    pos_sent = []
+    for sentence in x:
+        processed_spacy = nlp(sentence)
+        for ent in processed_spacy.ents:
+            globalents.append(ent.text + " " + ent.label_)
+        pos_sent.append(pos(processed_spacy))
+    return pos_sent
 
 
 # Word tokens, parts of speech tagging
 def wordtokens(dataframe):
-    print('words')
     dataframe['words'] = (dataframe['sentences'].apply(lambda x: [word_tokenize(item) for item in x]))
-    print('pos')
     dataframe['pos'] = dataframe['sentences'].map(spacy_pos)
-    print('list')
-    dataframe['posnltk'] = dataframe['words'].apply(lambda x: [nltk.pos_tag(item) for item in x])
-    print('nltk')
     dataframe['allwords'] = dataframe['words'].apply(lambda x: [item.strip(string.punctuation).lower()
                                                                 for sublist in x for item in sublist])
     dataframe['allwords'] = (dataframe['allwords'].apply(lambda x: [item for item in x if item.isalpha()
@@ -121,7 +103,6 @@ def scoring(dataframe, list):
                 if not row['document'] in list[word]:
                     list[word].append(row['document'])
                     dataframe.loc[idx, 'score'] += (row['mfreq'][word] * 0.75)
-                    print(row['mfreq'][word])
     return dataframe
 
 
@@ -265,6 +246,7 @@ def nmflda(documentlist):
     no_top_words = 10
     print("NMF Topics: ")
     display_topics(nmf, tfidf_feature_names, no_top_words)
+    print('\n')
     print("LDA Topics: ")
     display_topics(lda, tf_feature_names, no_top_words)
 
@@ -286,10 +268,8 @@ for input_file in glob.glob(os.path.join(input_path, '*.*')):
     if filterlanguage(parsed):
         continue
 
-    tokenised = tokenmakerwords(parsed)
-
-    # Ignore any documents with <50 words
-    if len(tokenised) < 100:
+    # Ignore any documents with <100 words
+    if len(parsed) < 100:
         continue
 
     # Create doclist for use in topic modelling
@@ -343,3 +323,4 @@ clustering(doclist)
 # Print results of NMF vs LDA topic modelling
 nmflda(doclist)
 
+print(globalents)
