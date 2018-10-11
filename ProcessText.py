@@ -22,7 +22,7 @@ nlp = en_core_web_sm.load()
 
 pstemmer = PorterStemmer()
 
-input_path = 'C:\\t2'
+input_path = 'C:\\t3'
 stop_words = set(stopwords.words('english'))
 keywords = ['IS', 'terrorism', 'bomb', 'is', 'the', 'consortium']
 filterkeywords = [w for w in keywords if w not in stop_words]
@@ -42,7 +42,6 @@ d = pd.DataFrame()
 # Create a list to use for clustering
 doclist = []
 word_matches = defaultdict(list)
-globalents = []
 
 
 # Use Tika to parse the file
@@ -69,16 +68,23 @@ def spacy_pos(x):
     pos_sent = []
     for sentence in x:
         processed_spacy = nlp(sentence)
-        for ent in processed_spacy.ents:
-            globalents.append(ent.text + " " + ent.label_)
         pos_sent.append(pos(processed_spacy))
     return pos_sent
 
+
+def ner(x):
+    ents = []
+    for sentence in x:
+        processed_spacy = nlp(sentence)
+        for ent in processed_spacy.ents:
+            ents.append((ent.text, ent.label_))
+    return set(ents)
 
 # Word tokens, parts of speech tagging
 def wordtokens(dataframe):
     dataframe['words'] = (dataframe['sentences'].apply(lambda x: [word_tokenize(item) for item in x]))
     dataframe['pos'] = dataframe['sentences'].map(spacy_pos)
+    dataframe['ner'] = dataframe['sentences'].map(ner)
     dataframe['allwords'] = dataframe['words'].apply(lambda x: [item.strip(string.punctuation).lower()
                                                                 for sublist in x for item in sublist])
     dataframe['allwords'] = (dataframe['allwords'].apply(lambda x: [item for item in x if item.isalpha()
@@ -91,6 +97,7 @@ def wordtokens(dataframe):
     dataframe['stemwords'] = (dataframe['stemwords'].apply(lambda x: [item for item in x if item.isalpha()
                                                                       and item not in stop_words]))
     dataframe['mfreqstem'] = dataframe['stemwords'].apply(nltk.FreqDist)
+
 
     return dataframe
 
@@ -240,7 +247,7 @@ def nmflda(documentlist):
     nmf = NMF(n_components=no_topics, random_state=1, alpha=.1, l1_ratio=.5, init='nndsvd').fit(tfidf)
 
     # Run LDA
-    lda = LatentDirichletAllocation(n_topics=no_topics, max_iter=5,
+    lda = LatentDirichletAllocation(n_components=no_topics, max_iter=5,
                                     learning_method='online', learning_offset=50.,random_state=0).fit(tf)
 
     no_top_words = 10
@@ -310,17 +317,33 @@ print('\n')
 print('Here are the scores based on cleansed data:')
 print(d[['document', 'score']])
 
-dirtyscoring(d)
+#iterate through top 10% of documents
+#pull out the people and orgs
 
-d = d.sort_values('score2', ascending=False)
-print('\n')
-print('Here are the scores based on uncleansed data:')
-print(d[['document', 'score2']])
 
-# Print results of K Means Cluster and prediction modelling
-clustering(doclist)
+# dirtyscoring(d)
+#
+# d = d.sort_values('score2', ascending=False)
+# print('\n')
+# print('Here are the scores based on uncleansed data:')
+# print(d[['document', 'score2']])
+#
+# # Print results of K Means Cluster and prediction modelling
+# clustering(doclist)
+#
+# # Print results of NMF vs LDA topic modelling
+# nmflda(doclist)
+# #
 
-# Print results of NMF vs LDA topic modelling
-nmflda(doclist)
+# TODO - only process for top weighted documents
+print('People discovered:')
+for doc in d['ner']:
+    for (a,b) in doc:
+        if b == 'PERSON':
+            print(a)
 
-print(globalents)
+
+# print('Organisations discovered:')
+# for (a,b) in globalents:
+#     if b == 'ORG':
+#         print(a)
