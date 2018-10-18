@@ -16,13 +16,21 @@ from sklearn.decomposition import NMF, LatentDirichletAllocation
 from nltk.stem import PorterStemmer
 import spacy
 import en_core_web_sm  # or any other model you downloaded via spacy download or pip
+# testing printing to pdf
+from fpdf import FPDF
+
+pdf = FPDF()
+pdf.add_page()
+pdf.set_font("Arial", size=10)
+pdf.cell(w = 0, txt="Output Report", ln=1, align="C")
+pdf.ln(20)
 
 nlp = en_core_web_sm.load()
 
 
 pstemmer = PorterStemmer()
 
-input_path = 'C:\\t3'
+input_path = 'C:\\t2'
 stop_words = set(stopwords.words('english'))
 keywords = ['IS', 'terrorism', 'bomb', 'is', 'the', 'consortium']
 filterkeywords = [w for w in keywords if w not in stop_words]
@@ -139,11 +147,15 @@ def scoringstem(dataframe, list):
 def contextkeywords(dataframe):
     print('\n')
     print('Here are the exact keyword matches in context: ')
+    pdf.cell(w=0,txt="Here are the exact keyword matches in context: ", ln=1, align="L")
+    pdf.ln(10)
     for (w1, t1) in poskeywords:
         for idx, row in dataframe.iterrows():
             for index, r in enumerate(row['pos']):
                 if (w1, t1) in r:
                     print(row['document'] + ' - ' + ' '.join(row['words'][index]))
+                    pdf.multi_cell(w=0, h=10, txt=row['document'] + ' - ' + ' '.join(row['words'][index]),  align="L")
+                    pdf.ln(5)
     return dataframe
 
 
@@ -173,7 +185,11 @@ def dirtyscoring(dataframe):
 def printkeywordmatches(list):
     for key, val in list.items():
         print("Keyword: " + key + ". Found in these documents: ")
+        pdf.multi_cell(w=0, h=10, txt="Keyword: " + key + ". Found in these documents: ", align="L")
+        pdf.ln(5)
         print(val)
+        pdf.multi_cell(w=0, h=10, txt=', '.join(val), align="L")
+        pdf.ln(10)
 
 
 def tokenize_and_stem(text):
@@ -314,36 +330,35 @@ d = d.sort_values('score', ascending=False)
 
 # Print sorted documents
 print('\n')
+pdf.ln(10)
 print('Here are the scores based on cleansed data:')
+pdf.multi_cell(w=0, h=10, txt='Here are the scores based on cleansed data:', align="L")
+pdf.ln(5)
 print(d[['document', 'score']])
+pdf.multi_cell(w=0, h=10, txt=d[['document', 'score']].to_string(), align="L")
+pdf.ln(10)
+# cater for small no of docs
+# cater for 0 scores
 
-#iterate through top 10% of documents
-#pull out the people and orgs
+topdocs = d.head(int(len(d)*0.1))
 
-
-# dirtyscoring(d)
-#
-# d = d.sort_values('score2', ascending=False)
-# print('\n')
-# print('Here are the scores based on uncleansed data:')
-# print(d[['document', 'score2']])
-#
-# # Print results of K Means Cluster and prediction modelling
-# clustering(doclist)
-#
-# # Print results of NMF vs LDA topic modelling
-# nmflda(doclist)
-# #
-
-# TODO - only process for top weighted documents
 print('People discovered:')
-for doc in d['ner']:
+pdf.multi_cell(w=0, h=10, txt='People discovered:', align="L")
+pdf.ln(5)
+for doc in topdocs['ner']:
     for (a,b) in doc:
         if b == 'PERSON':
             print(a)
+            pdf.multi_cell(w=0, h=10, txt=a, align="L")
+pdf.ln(10)
+print('Orgs discovered:')
+pdf.multi_cell(w=0, h=10, txt='Orgs discovered:', align="L")
+pdf.ln(5)
+for doc in topdocs['ner']:
+    for (a,b) in doc:
+        if b == 'ORG':
+            print(a)
+            pdf.multi_cell(w=0, h=10, txt=a, align="L")
 
 
-# print('Organisations discovered:')
-# for (a,b) in globalents:
-#     if b == 'ORG':
-#         print(a)
+pdf.output('C:\\tout\\simple_demo.pdf')
