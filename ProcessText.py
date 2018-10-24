@@ -11,14 +11,13 @@ import re
 from nltk.corpus import stopwords
 from collections import defaultdict
 from sklearn.cluster import KMeans
-from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
-from sklearn.decomposition import NMF, LatentDirichletAllocation
+from sklearn.feature_extraction.text import TfidfVectorizer
 from nltk.stem import PorterStemmer
-import spacy
 import en_core_web_sm  # or any other model you downloaded via spacy download or pip
-# testing printing to pdf
 from fpdf import FPDF
 
+# Set up PDF file - requires the DejaVu font to be installed in a fonts folder in the
+# fpdf package directory in the python environment
 pdf = FPDF()
 pdf.add_page()
 pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True)
@@ -27,29 +26,34 @@ pdf.set_font('DejaVu', '', 14)
 pdf.cell(w=0, txt="Output Report", ln=1, align="C")
 pdf.ln(20)
 
+# Load the model to be used by SpaCy for Named Entity Recognition
 nlp = en_core_web_sm.load()
 
-
+# Set up a stemmer to use to stem words
 pstemmer = PorterStemmer()
 
+# Set up input path, stop words to be excluded and keywords to be matched
 input_path = 'C:\\t2'
 stop_words = set(stopwords.words('english'))
 keywords = ['IS', 'terrorism', 'bomb', 'is', 'the', 'consortium']
+
+# Filter out stopwords from keywords list, POS tag keywords
 filterkeywords = [w for w in keywords if w not in stop_words]
 poskeywords = nltk.pos_tag(filterkeywords)
 
 # If the first keyword is a verb, move it and reparse the list
+# This prevents verbs that may also be nouns being misidentified
 if poskeywords[0][1] == 'VBZ':
     filterkeywords.insert(1, filterkeywords.pop(0))
     poskeywords = nltk.pos_tag(filterkeywords)
 
+# Build a list of stem keywords for matching
 stemkeywords = nltk.pos_tag([pstemmer.stem(t) for t in filterkeywords])
 
-
-# Set up Dataframe
+# Set up Dataframe - this will hold all the documents and the scores
 d = pd.DataFrame()
 
-# Create a list to use for clustering
+# Create a list to use for clustering - this is for topic modelling
 doclist = []
 word_matches = defaultdict(list)
 
@@ -62,7 +66,7 @@ def parsewithtika(inputfile):
     return re.sub(r'\s+', ' ', psd)
 
 
-# Language filter
+# Language filter - removes non english documents from the list
 def filterlanguage(inputfile):
     if detect(inputfile) != 'en':
         return True
@@ -74,6 +78,7 @@ def pos(x):
     return [(token.text, token.tag_) for token in x]
 
 
+# Add the parts of speech to the words
 def spacy_pos(x):
     pos_sent = []
     for sentence in x:
@@ -82,6 +87,7 @@ def spacy_pos(x):
     return pos_sent
 
 
+# Add NER tags to words, and return the set so we don't have duplicates
 def ner(x):
     ents = []
     for sentence in x:
@@ -90,24 +96,35 @@ def ner(x):
             ents.append((ent.text, ent.label_))
     return set(ents)
 
+
 # Word tokens, parts of speech tagging
 def wordtokens(dataframe):
+    # Get all the words
     dataframe['words'] = (dataframe['sentences'].apply(lambda x: [word_tokenize(item) for item in x]))
+    # Get all the parts of speech tags
     dataframe['pos'] = dataframe['sentences'].map(spacy_pos)
+    # Get all the named entity tags
     dataframe['ner'] = dataframe['sentences'].map(ner)
+    # Lowercase every word and put them all in a single list for each document
     dataframe['allwords'] = dataframe['words'].apply(lambda x: [item.strip(string.punctuation).lower()
                                                                 for sublist in x for item in sublist])
+    # Strip out non words and stop words
     dataframe['allwords'] = (dataframe['allwords'].apply(lambda x: [item for item in x if item.isalpha()
                                                                     and item not in stop_words]))
+    # Calculate the frequency of each word in the document
     dataframe['mfreq'] = dataframe['allwords'].apply(nltk.FreqDist)
+    # Get all the pos tagged words in a single list for each document
     dataframe['poslist'] = dataframe['pos'].apply(lambda x: [item for sublist in x for item in sublist])
+    # Calculate the frequency of each pos tagged word
     dataframe['mfreqpos'] = dataframe['poslist'].apply(nltk.FreqDist)
+    # Get the stems of all the words
     dataframe['stemwords'] = dataframe['words'].apply(lambda x: [pstemmer.stem(item) for sublist in x
                                                                  for item in sublist])
+    # Get rid of non words and stop words
     dataframe['stemwords'] = (dataframe['stemwords'].apply(lambda x: [item for item in x if item.isalpha()
                                                                       and item not in stop_words]))
+    # Calculate frequency of stemmed words
     dataframe['mfreqstem'] = dataframe['stemwords'].apply(nltk.FreqDist)
-
 
     return dataframe
 
@@ -134,7 +151,7 @@ def scoringpos(dataframe, list):
     return dataframe
 
 
-# Score documents based on cleansed dataset - so should discount stopwords and be sensible
+# Score documents based on stemmed words in cleansed dataset - so should discount stopwords and be sensible
 def scoringstem(dataframe, list):
     for word in stemkeywords:
         for idx, row in dataframe.iterrows():
@@ -145,7 +162,7 @@ def scoringstem(dataframe, list):
     return dataframe
 
 
-# Find keywords using POS
+# Find keywords using POS, show the sentence the word was found in
 def contextkeywords(dataframe):
     pdf.set_font('DejaVuSans-Bold', '', 14)
     pdf.cell(w=0,txt="Here are the exact keyword matches in context: ", ln=1, align="L")
@@ -162,29 +179,7 @@ def contextkeywords(dataframe):
     return dataframe
 
 
-# Sort using a dirty model
-def dirtyscoring(dataframe):
-    dataframe['score2'] = 0
-    dataframe['w2'] = dataframe['words'].apply(lambda x: [item for sublist in x for item in sublist])
-    dataframe['mfreq2'] = dataframe['w2'].apply(nltk.FreqDist)
-
-    word_matches = defaultdict(list)
-    for word in keywords:
-        for idx, row in dataframe.iterrows():
-            if word in row['w2']:
-                dataframe.loc[idx, 'score2'] += row['mfreq2'][word]
-                if not row['document'] in word_matches[word]:
-                    word_matches[word].append(row['document'])
-    print('\n')
-    print('The following keyword hits occurred in the uncleansed data:')
-
-    for key, val in word_matches.items():
-        print("Keyword: " + key + ". Found in these documents: ")
-        print(val)
-
-    return dataframe
-
-
+# Show all the documents that had keyword matches, for each keyword
 def printkeywordmatches(list):
     for key, val in list.items():
         print("Keyword: " + key + ". Found in these documents: ")
@@ -195,6 +190,7 @@ def printkeywordmatches(list):
         pdf.ln(10)
 
 
+# tokenize each word in the text and then filter out non alphabet words, then get all the stems
 def tokenize_and_stem(text):
     tokens = [word for sent in nltk.sent_tokenize(text) for word in nltk.word_tokenize(sent)]
     filtered_tokens = []
@@ -206,6 +202,11 @@ def tokenize_and_stem(text):
 
 
 # Cluster documents and demonstrate prediction
+# K means clustering using the following parameters:
+# - filter out english stopwords
+# - word must appear in no more than 80% of documents
+# - word must appear in no less than 20% of documents
+# - token and stem words, allow up to 3 words together as a grouping
 # TODO - calculate ideal k value
 def clustering(documents):
     vectorizer = TfidfVectorizer(stop_words='english', max_df=0.8, min_df=0.2, use_idf=True,
@@ -238,43 +239,6 @@ def clustering(documents):
     prediction = model.predict(Y)
     print("A document with 'good' terms would be in:")
     print(prediction)
-
-
-def display_topics(model, feature_names, no_top_words):
-    for topic_idx, topic in enumerate(model.components_):
-        print("Topic %d:" % (topic_idx))
-        print(" ".join([feature_names[i]
-                        for i in topic.argsort()[:-no_top_words - 1:-1]]))
-
-
-def nmflda(documentlist):
-    no_features = 1000
-
-    # NMF is able to use tf-idf
-    tfidf_vectorizer = TfidfVectorizer(max_df=0.95, min_df=2, max_features=no_features, stop_words='english')
-    tfidf = tfidf_vectorizer.fit_transform(documentlist)
-    tfidf_feature_names = tfidf_vectorizer.get_feature_names()
-
-    # LDA can only use raw term counts for LDA because it is a probabilistic graphical model
-    tf_vectorizer = CountVectorizer(max_df=0.95, min_df=2, max_features=no_features, stop_words='english')
-    tf = tf_vectorizer.fit_transform(documentlist)
-    tf_feature_names = tf_vectorizer.get_feature_names()
-
-    no_topics = 5
-
-    # Run NMF
-    nmf = NMF(n_components=no_topics, random_state=1, alpha=.1, l1_ratio=.5, init='nndsvd').fit(tfidf)
-
-    # Run LDA
-    lda = LatentDirichletAllocation(n_components=no_topics, max_iter=5,
-                                    learning_method='online', learning_offset=50.,random_state=0).fit(tf)
-
-    no_top_words = 10
-    print("NMF Topics: ")
-    display_topics(nmf, tfidf_feature_names, no_top_words)
-    print('\n')
-    print("LDA Topics: ")
-    display_topics(lda, tf_feature_names, no_top_words)
 
 
 # Main loop function
@@ -340,11 +304,12 @@ pdf.ln(5)
 print(d[['document', 'score']])
 pdf.multi_cell(w=0, h=10, txt=d[['document', 'score']].to_string(), align="L")
 pdf.ln(10)
+
 # cater for small no of docs
 # cater for 0 scores
-
 topdocs = d.head(int(len(d)*0.1))
 
+# Print results of NER for people
 print('People discovered:')
 pdf.multi_cell(w=0, h=10, txt='People discovered:', align="L")
 pdf.ln(5)
@@ -354,6 +319,8 @@ for doc in topdocs['ner']:
             print(a)
             pdf.multi_cell(w=0, h=10, txt=a, align="L")
 pdf.ln(10)
+
+# Print results of NER for organisations
 print('Orgs discovered:')
 pdf.multi_cell(w=0, h=0, txt='Orgs discovered:', align="L")
 pdf.ln(5)
@@ -363,5 +330,5 @@ for doc in topdocs['ner']:
             print(a)
             pdf.multi_cell(w=0, h=10, txt=a, align="L")
 
-
+# Output the case document with all the printed results to PDF
 pdf.output('C:\\tout\\simple_demo.pdf')
