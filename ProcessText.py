@@ -21,8 +21,10 @@ from fpdf import FPDF
 
 pdf = FPDF()
 pdf.add_page()
-pdf.set_font("Arial", size=10)
-pdf.cell(w = 0, txt="Output Report", ln=1, align="C")
+pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True)
+pdf.add_font('DejaVuSans-Bold', '', 'DejaVuSans-Bold.ttf', uni=True)
+pdf.set_font('DejaVu', '', 14)
+pdf.cell(w=0, txt="Output Report", ln=1, align="C")
 pdf.ln(20)
 
 nlp = en_core_web_sm.load()
@@ -145,16 +147,17 @@ def scoringstem(dataframe, list):
 
 # Find keywords using POS
 def contextkeywords(dataframe):
-    print('\n')
-    print('Here are the exact keyword matches in context: ')
+    pdf.set_font('DejaVuSans-Bold', '', 14)
     pdf.cell(w=0,txt="Here are the exact keyword matches in context: ", ln=1, align="L")
     pdf.ln(10)
     for (w1, t1) in poskeywords:
         for idx, row in dataframe.iterrows():
             for index, r in enumerate(row['pos']):
                 if (w1, t1) in r:
-                    print(row['document'] + ' - ' + ' '.join(row['words'][index]))
-                    pdf.multi_cell(w=0, h=10, txt=row['document'] + ' - ' + ' '.join(row['words'][index]),  align="L")
+                    pdf.set_font('DejaVuSans-Bold', '', 12)
+                    pdf.multi_cell(w=0, h=10, txt=row['document'] + ' - ', align="L")
+                    pdf.set_font('DejaVu', '', 12)
+                    pdf.multi_cell(w=0, h=10, txt=' '.join(row['words'][index]),  align="L")
                     pdf.ln(5)
     return dataframe
 
@@ -352,7 +355,7 @@ for doc in topdocs['ner']:
             pdf.multi_cell(w=0, h=10, txt=a, align="L")
 pdf.ln(10)
 print('Orgs discovered:')
-pdf.multi_cell(w=0, h=10, txt='Orgs discovered:', align="L")
+pdf.multi_cell(w=0, h=0, txt='Orgs discovered:', align="L")
 pdf.ln(5)
 for doc in topdocs['ner']:
     for (a,b) in doc:
